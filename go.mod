@@ -1,3 +1,3 @@
-module api-go-sdk
+module golang-sdk
 
 go 1.17

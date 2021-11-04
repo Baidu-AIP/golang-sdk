@@ -17,7 +17,7 @@ limitations under the License.
 package censor
 
 import (
-	"api-go-sdk/baseClient"
+	"github.com/Baidu-AIP/golang-sdk/baseClient"
 )
 
 const __imageCensorUserDefinedUrl = "https://aip.baidubce.com/rest/2.0/solution/v1/img_censor/v2/user_defined"

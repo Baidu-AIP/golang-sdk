@@ -50,14 +50,18 @@ type Auth struct {
 func (auth *Auth) InitAuth(ak string, sk string) {
 	auth.ak = ak
 	auth.sk = sk
-	auth.client = http.Client{}
+	auth.client = http.Client{
+		Timeout: time.Second * 20,
+	}
 	auth.refresh()
 }
 
 func (auth *Auth) InitCloudAuth(ak string, sk string) {
 	auth.ak = ak
 	auth.sk = sk
-	auth.client = http.Client{}
+	auth.client = http.Client{
+		Timeout: time.Second * 20,	
+	}
 	auth.isCloudUser = true
 }
 func (auth *Auth) refresh() {

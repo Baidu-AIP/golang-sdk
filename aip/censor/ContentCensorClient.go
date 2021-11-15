@@ -17,6 +17,8 @@ limitations under the License.
 package censor
 
 import (
+	"strconv"
+
 	"github.com/Baidu-AIP/golang-sdk/baseClient"
 )
 
@@ -52,59 +54,64 @@ func (client *ContentCensorClient) TextCensor(text string) (result string) {
 	return baseClient.PostUrlForm(__textCensorUserDefinedUrl, data, &client.auth)
 }
 
-func (client *ContentCensorClient) ImgCensor(image string, options map[string]string) (result string) {
+func (client *ContentCensorClient) ImgCensor(image string, options map[string]interface{}) (result string) {
 	data := make(map[string]string)
 	data["image"] = image
-	if options != nil {
-		for key, val := range options {
-			data[key] = val
+	for key, val := range options {
+		switch val := val.(type) {
+		case int:
+			data[key] = strconv.Itoa(val)
 		}
 	}
 	return baseClient.PostUrlForm(__imageCensorUserDefinedUrl, data, &client.auth)
 }
 
-func (client *ContentCensorClient) ImgCensorUrl(imgUrl string, options map[string]string) (result string) {
+func (client *ContentCensorClient) ImgCensorUrl(imgUrl string, options map[string]interface{}) (result string) {
 	data := make(map[string]string)
 	data["imgUrl"] = imgUrl
-	if options != nil {
-		for key, val := range options {
-			data[key] = val
+	for key, val := range options {
+		switch val := val.(type) {
+		case int:
+			data[key] = strconv.Itoa(val)
 		}
 	}
 	return baseClient.PostUrlForm(__imageCensorUserDefinedUrl, data, &client.auth)
 }
 
-func (client *ContentCensorClient) VoiceCensorUrl(url string, fmt string, options map[string]string) (result string) {
+func (client *ContentCensorClient) VoiceCensorUrl(url string, fmt string, options map[string]interface{}) (result string) {
 	data := make(map[string]string)
 	data["url"] = url
 	data["fmt"] = fmt
-	if options != nil {
-		for key, val := range options {
-			data[key] = val
+	for key, val := range options {
+		switch val := val.(type) {
+		case bool:
+			data[key] = strconv.FormatBool(val)
 		}
 	}
 	return baseClient.PostUrlForm(__voiceCensorUserDefinedUrl, data, &client.auth)
 }
 
-func (client *ContentCensorClient) VoiceCensor(base64 string, fmt string, options map[string]string) (result string) {
+func (client *ContentCensorClient) VoiceCensor(base64 string, fmt string, options map[string]interface{}) (result string) {
 	data := make(map[string]string)
 	data["base64"] = base64
 	data["fmt"] = fmt
-	if options != nil {
-		for key, val := range options {
-			data[key] = val
+	for key, val := range options {
+		switch val := val.(type) {
+		case bool:
+			data[key] = strconv.FormatBool(val)
 		}
 	}
 	return baseClient.PostUrlForm(__voiceCensorUserDefinedUrl, data, &client.auth)
 }
 
-func (client *ContentCensorClient) VideoCensor(name string, videoUrl string, extId string, options map[string]string) (result string) {
+func (client *ContentCensorClient) VideoCensor(name string, videoUrl string, extId string, options map[string]interface{}) (result string) {
 	data := make(map[string]string)
 	data["name"] = name
 	data["videoUrl"] = videoUrl
 	data["extId"] = extId
-	if options != nil {
-		for key, val := range options {
+	for key, val := range options {
+		switch val := val.(type) {
+		case string:
 			data[key] = val
 		}
 	}

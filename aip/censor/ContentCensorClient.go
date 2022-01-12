@@ -26,7 +26,7 @@ const __imageCensorUserDefinedUrl = "https://aip.baidubce.com/rest/2.0/solution/
 
 const __textCensorUserDefinedUrl = "https://aip.baidubce.com/rest/2.0/solution/v1/text_censor/v2/user_defined"
 
-const __voiceCensorUserDefinedUrl = "https://aip.baidubce.com/rest/2.0/solution/v1/voice_censor/v2/user_defined"
+const __voiceCensorUserDefinedUrl = "https://aip.baidubce.com/rest/2.0/solution/v1/voice_censor/v3/user_defined"
 
 const __videoCensorUserDefinedUrl = "https://aip.baidubce.com/rest/2.0/solution/v1/video_censor/v2/user_defined"
 
@@ -78,10 +78,11 @@ func (client *ContentCensorClient) ImgCensorUrl(imgUrl string, options map[strin
 	return baseClient.PostUrlForm(__imageCensorUserDefinedUrl, data, &client.auth)
 }
 
-func (client *ContentCensorClient) VoiceCensorUrl(url string, fmt string, options map[string]interface{}) (result string) {
+func (client *ContentCensorClient) VoiceCensorUrl(url string, rate int, fmt string, options map[string]interface{}) (result string) {
 	data := make(map[string]string)
 	data["url"] = url
 	data["fmt"] = fmt
+	data["rate"] = strconv.FormatInt(int64(rate), 10)
 	for key, val := range options {
 		switch val := val.(type) {
 		case bool:
@@ -91,10 +92,11 @@ func (client *ContentCensorClient) VoiceCensorUrl(url string, fmt string, option
 	return baseClient.PostUrlForm(__voiceCensorUserDefinedUrl, data, &client.auth)
 }
 
-func (client *ContentCensorClient) VoiceCensor(base64 string, fmt string, options map[string]interface{}) (result string) {
+func (client *ContentCensorClient) VoiceCensor(base64 string, rate int, fmt string, options map[string]interface{}) (result string) {
 	data := make(map[string]string)
 	data["base64"] = base64
 	data["fmt"] = fmt
+	data["rate"] = strconv.FormatInt(int64(rate), 10)
 	for key, val := range options {
 		switch val := val.(type) {
 		case bool:

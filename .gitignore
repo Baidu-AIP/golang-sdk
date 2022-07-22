@@ -1,1 +1,11 @@
+.svn
+.tmp
+.download
+output
+.*.swp
+.*.swo
+.idea/
+.DS_Store
+
 main.go
+test/resources/AkSkConst.go

@@ -69,9 +69,10 @@ func (auth *Auth) refresh() {
 	now := time.Now().Unix()
 	url := fmt.Sprintf(authUrl, auth.ak, auth.sk)
 	resp, err := auth.client.Get(url)
-	if err != nil {
+	if err != nil || resp == nil {
 		auth.hasAuth = false
 		log.Println(err)
+		return
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()

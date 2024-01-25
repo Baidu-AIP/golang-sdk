@@ -60,7 +60,7 @@ func (auth *Auth) InitCloudAuth(ak string, sk string) {
 	auth.ak = ak
 	auth.sk = sk
 	auth.client = http.Client{
-		Timeout: time.Second * 20,	
+		Timeout: time.Second * 20,
 	}
 	auth.isCloudUser = true
 }
@@ -122,7 +122,6 @@ func (auth *Auth) setHeader(req *http.Request) {
 		canonicalURI = "/"
 	}
 	canonicalURI = url.QueryEscape(canonicalURI)
-	canonicalURI = strings.ReplaceAll(canonicalURI, "%2F", "/")
 	canonicalQueryString := req.URL.RawQuery
 	if canonicalQueryString != "" {
 		queryArray := strings.Split(canonicalQueryString, "&")

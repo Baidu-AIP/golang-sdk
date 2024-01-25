@@ -48,8 +48,9 @@ func NewCloudClient(ak string, sk string) *ContentCensorClient {
 	return &client
 }
 
-func (client *ContentCensorClient) TextCensor(text string) (result string) {
+func (client *ContentCensorClient) TextCensor(text string, uid string) (result string) {
 	data := make(map[string]string)
+	data["userId"] = uid
 	data["text"] = text
 	return baseClient.PostUrlForm(__textCensorUserDefinedUrl, data, &client.auth)
 }

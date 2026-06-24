@@ -30,6 +30,10 @@ const __voiceCensorUserDefinedUrl = "https://aip.baidubce.com/rest/2.0/solution/
 
 const __videoCensorUserDefinedUrl = "https://aip.baidubce.com/rest/2.0/solution/v1/video_censor/v2/user_defined"
 
+const __longVideoCensorSubmitUrl = "https://aip.baidubce.com/rest/2.0/solution/v1/video_censor/v1/video/submit"
+
+const __longVideoCensorPullUrl = "https://aip.baidubce.com/rest/2.0/solution/v1/video_censor/v1/video/pull"
+
 type ContentCensorClient struct {
 	auth baseClient.Auth
 }
@@ -46,6 +50,36 @@ func NewCloudClient(ak string, sk string) *ContentCensorClient {
 	client.auth = baseClient.Auth{}
 	client.auth.InitCloudAuth(ak, sk)
 	return &client
+}
+
+func addLongVideoOptions(data map[string]string, options map[string]interface{}) {
+	for key, val := range options {
+		switch val := val.(type) {
+		case string:
+			data[key] = val
+		case int:
+			data[key] = strconv.Itoa(val)
+		case int64:
+			data[key] = strconv.FormatInt(val, 10)
+		case bool:
+			data[key] = strconv.FormatBool(val)
+		}
+	}
+}
+
+func buildLongVideoCensorSubmitData(videoUrl string, extId string, options map[string]interface{}) map[string]string {
+	data := make(map[string]string)
+	addLongVideoOptions(data, options)
+	data["url"] = videoUrl
+	data["extId"] = extId
+	return data
+}
+
+func buildLongVideoCensorPullData(taskId string, options map[string]interface{}) map[string]string {
+	data := make(map[string]string)
+	addLongVideoOptions(data, options)
+	data["taskId"] = taskId
+	return data
 }
 
 func (client *ContentCensorClient) TextCensor(text string) (result string) {
@@ -118,4 +152,14 @@ func (client *ContentCensorClient) VideoCensor(name string, videoUrl string, ext
 		}
 	}
 	return baseClient.PostUrlForm(__videoCensorUserDefinedUrl, data, &client.auth)
+}
+
+func (client *ContentCensorClient) LongVideoCensorSubmit(videoUrl string, extId string, options map[string]interface{}) (result string) {
+	data := buildLongVideoCensorSubmitData(videoUrl, extId, options)
+	return baseClient.PostUrlForm(__longVideoCensorSubmitUrl, data, &client.auth)
+}
+
+func (client *ContentCensorClient) LongVideoCensorPull(taskId string, options map[string]interface{}) (result string) {
+	data := buildLongVideoCensorPullData(taskId, options)
+	return baseClient.PostUrlForm(__longVideoCensorPullUrl, data, &client.auth)
 }

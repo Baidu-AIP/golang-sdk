@@ -82,9 +82,21 @@ func buildLongVideoCensorPullData(taskId string, options map[string]interface{})
 	return data
 }
 
-func (client *ContentCensorClient) TextCensor(text string) (result string) {
+func (client *ContentCensorClient) TextCensor(text string, options map[string]interface{}) (result string) {
 	data := make(map[string]string)
 	data["text"] = text
+	for key, val := range options {
+		switch val := val.(type) {
+		case string:
+			data[key] = val
+		case int:
+			data[key] = strconv.Itoa(val)
+		case int64:
+			data[key] = strconv.FormatInt(val, 10)
+		case bool:
+			data[key] = strconv.FormatBool(val)
+		}
+	}
 	return baseClient.PostUrlForm(__textCensorUserDefinedUrl, data, &client.auth)
 }
 

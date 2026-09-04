@@ -16,6 +16,9 @@ limitations under the License.
 
 // 融合审核（文本 / 图像 / 长视频）SDK 使用示例。
 //
+// SDK 返回的是响应报文原文（JSON 字符串），本示例演示如何按需解析：
+// 只取轮询需要的 status / error_code，其余字段原样打印。
+//
 // 运行：
 //
 //	go run test/censor/fusion/FusionCensorClientTest.go \
@@ -23,6 +26,8 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -45,6 +50,45 @@ const __pullInterval = 3 * time.Second
 // __maxPullTimes 最多轮询次数，防止无限等待。
 const __maxPullTimes = 40
 
+// censorResponse 只建模轮询流程必需的字段。
+//
+// 审核明细（data）字段集不封闭，且各模态结构不同（文本 / 图像是数组，
+// 长视频是对象），所以这里不建模，由调用方按自己的业务需要解析。
+type censorResponse struct {
+	TaskID    string `json:"taskId"`
+	LogID     string `json:"log_id"`
+	Status    string `json:"status"`
+	ErrorCode int64  `json:"error_code"`
+	ErrorMsg  string `json:"error_msg"`
+
+	// 网关（API Gateway）在请求到达审核服务前拒绝时，返回的是 BCE 通用错误格式，
+	// 与业务错误的 error_code 形状不同，两者都要检查
+	GatewayCode    string `json:"code"`
+	GatewayMessage string `json:"message"`
+	RequestID      string `json:"requestId"`
+}
+
+// isSuccess 业务错误码与网关错误码都为空才算成功。
+func (response *censorResponse) isSuccess() bool {
+	return response.ErrorCode == 0 && response.GatewayCode == ""
+}
+
+// isTerminal 任务是否已到终态。非终态时报文里没有结论字段。
+func (response *censorResponse) isTerminal() bool {
+	return response.Status == censor.FusionStatusFinished ||
+		response.Status == censor.FusionStatusError
+}
+
+// errorDescription 统一业务错误与网关错误两种报文形状。
+func (response *censorResponse) errorDescription() string {
+	if response.GatewayCode != "" {
+		return fmt.Sprintf("gateway %s: %s (requestId=%s)",
+			response.GatewayCode, response.GatewayMessage, response.RequestID)
+	}
+	return fmt.Sprintf("error_code=%d error_msg=%s (log_id=%s)",
+		response.ErrorCode, response.ErrorMsg, response.LogID)
+}
+
 func main() {
 	flag.Parse()
 	if *ak == "" || *sk == "" || *content == "" {
@@ -60,19 +104,19 @@ func main() {
 	}
 	fmt.Printf("服务域名 %s\n", client.Endpoint())
 
-	var submitResponse *censor.FusionResponse
-	var pull func(taskID string) (*censor.FusionResponse, error)
+	var submitRaw string
+	var pull func(taskID string) (string, error)
 
 	switch *mode {
 	case "text":
-		submitResponse, err = client.SubmitText(&censor.SubmitTextRequest{
+		submitRaw, err = client.SubmitText(&censor.SubmitTextRequest{
 			Text:       *content,
 			StrategyID: *strategyID,
 			UserID:     "sdk_demo",
 		})
 		pull = client.PullTextResult
 	case "image":
-		submitResponse, err = client.SubmitImage(&censor.SubmitImageRequest{
+		submitRaw, err = client.SubmitImage(&censor.SubmitImageRequest{
 			ImgURL:     *content,
 			StrategyID: *strategyID,
 			UserID:     "sdk_demo",
@@ -80,7 +124,7 @@ func main() {
 		pull = client.PullImageResult
 	case "video":
 		detectType := censor.VideoDetectTypeFrameAndAudio
-		submitResponse, err = client.SubmitVideo(&censor.SubmitVideoRequest{
+		submitRaw, err = client.SubmitVideo(&censor.SubmitVideoRequest{
 			URL:        *content,
 			DetectType: &detectType,
 			StrategyID: *strategyID,
@@ -91,118 +135,66 @@ func main() {
 		log.Fatalf("未知模态 %q，可选 text / image / video", *mode)
 	}
 
+	// err 只表示传输失败或本地参数校验失败；服务端拒绝（含 4xx/5xx）会正常返回报文
 	if err != nil {
 		log.Fatalf("提交失败: %v", err)
 	}
-	if !submitResponse.IsSuccess() {
-		log.Fatalf("提交被拒绝: %s", submitResponse.ErrorDescription())
+	fmt.Printf("提交响应: %s\n", submitRaw)
+
+	var submitResponse censorResponse
+	if err := json.Unmarshal([]byte(submitRaw), &submitResponse); err != nil {
+		log.Fatalf("提交响应不是 JSON: %v", err)
+	}
+	if !submitResponse.isSuccess() {
+		log.Fatalf("提交被拒绝: %s", submitResponse.errorDescription())
 	}
 	fmt.Printf("提交成功，taskId=%s\n", submitResponse.TaskID)
 
-	// submit 是异步的，只返回 taskId；结论要轮询 result 或配置 callbackUrl 等回调。
-	result := pollResult(pull, submitResponse.TaskID)
-	if result == nil {
+	// submit 是异步的，只返回 taskId；结论要轮询 result 或配置 callbackUrl 走回调。
+	resultRaw := pollResult(pull, submitResponse.TaskID)
+	if resultRaw == "" {
 		return
 	}
-	printResult(*mode, result)
+	fmt.Printf("\n审核完成，完整报文：\n%s\n", prettyJSON(resultRaw))
 }
 
-// pollResult 轮询到终态。未完成时服务端返回 PROCESSING 而非报错，不能当失败处理。
-func pollResult(pull func(taskID string) (*censor.FusionResponse, error),
-	taskID string) *censor.FusionResponse {
+// pollResult 轮询到终态，返回终态报文原文。未完成时服务端返回 PROCESSING
+// 而非报错，不能当失败处理。
+func pollResult(pull func(taskID string) (string, error), taskID string) string {
 	for i := 0; i < __maxPullTimes; i++ {
 		time.Sleep(__pullInterval)
 
-		response, err := pull(taskID)
+		raw, err := pull(taskID)
 		if err != nil {
 			log.Printf("第 %d 次拉取失败，继续重试: %v", i+1, err)
 			continue
 		}
-		// 业务错误（无权限 6、任务不存在 282006 等）不会重试成功，直接退出。
-		if !response.IsSuccess() && !response.IsTerminal() {
-			log.Printf("拉取被拒绝: %s", response.ErrorDescription())
-			return nil
+
+		var response censorResponse
+		if err := json.Unmarshal([]byte(raw), &response); err != nil {
+			log.Printf("第 %d 次拉取的响应不是 JSON: %v，原始报文: %s", i+1, err, raw)
+			continue
 		}
-		if !response.IsTerminal() {
+		// 业务错误（无权限 6、任务不存在 282006 等）不会重试成功，直接退出。
+		if !response.isSuccess() {
+			log.Printf("拉取被拒绝: %s", response.errorDescription())
+			return ""
+		}
+		if !response.isTerminal() {
 			fmt.Printf("第 %d 次拉取：status=%s，继续等待\n", i+1, response.Status)
 			continue
 		}
-		return response
+		return raw
 	}
 	log.Printf("轮询 %d 次仍未完成，taskId=%s", __maxPullTimes, taskID)
-	return nil
+	return ""
 }
 
-func printResult(mode string, response *censor.FusionResponse) {
-	fmt.Printf("\n审核完成：status=%s conclusion=%s conclusionType=%d\n",
-		response.Status, response.Conclusion, response.ConclusionType)
-	if !response.IsSuccess() {
-		fmt.Printf("错误信息：%s\n", response.ErrorDescription())
+// prettyJSON 格式化报文便于阅读，解析失败则原样返回。
+func prettyJSON(raw string) string {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, []byte(raw), "", "    "); err != nil {
+		return raw
 	}
-
-	if mode == "video" {
-		printVideoData(response)
-		return
-	}
-
-	details, err := response.UnmarshalAuditDetails()
-	if err != nil {
-		log.Printf("解析明细失败: %v，原始报文: %s", err, response.Raw)
-		return
-	}
-	if len(details) == 0 {
-		fmt.Println("无违规明细（合规且未命中白名单）")
-		return
-	}
-	for i, detail := range details {
-		fmt.Printf("明细 %d: type=%d subType=%d conclusionType=%d msg=%s agentType=%s agentSubType=%s\n",
-			i+1, detail.Type, detail.SubType, detail.ConclusionType,
-			detail.Msg, detail.AgentType, detail.AgentSubType)
-		// 未建模字段（probability、location、hits、words 等）原样保留在 Extras
-		for key, value := range detail.Extras {
-			fmt.Printf("    %s = %s\n", key, string(value))
-		}
-	}
-}
-
-func printVideoData(response *censor.FusionResponse) {
-	data, err := response.UnmarshalVideoData()
-	if err != nil {
-		log.Printf("解析长视频结果失败: %v，原始报文: %s", err, response.Raw)
-		return
-	}
-	if data == nil {
-		fmt.Println("无违规明细（合规且未命中白名单）")
-		return
-	}
-	fmt.Printf("视频时长 %d 秒，违规帧 %d 个，违规音频片段 %d 个\n",
-		data.TaskDuration, len(data.Frames), len(data.Audios))
-
-	// 帧时间戳单位是秒，音频是毫秒 —— 服务端口径不一致
-	for _, frame := range data.Frames {
-		fmt.Printf("帧 %ds: %s，明细 %d 条\n",
-			frame.FrameTimeStamp, frame.FrameURL, len(frame.Data))
-		for _, detail := range frame.Data {
-			fmt.Printf("    type=%d subType=%d msg=%s agentType=%s\n",
-				detail.Type, detail.SubType, detail.Msg, detail.AgentType)
-		}
-	}
-
-	for _, audio := range data.Audios {
-		fmt.Printf("音频 %dms-%dms: %s\n", audio.StartTime, audio.EndTime, audio.AudioURL)
-		// 声纹类特征（如娇喘识别）
-		for _, feature := range audio.AudioAuditResult {
-			fmt.Printf("    声纹: type=%d subType=%d msg=%s\n",
-				feature.Type, feature.SubType, feature.Msg)
-		}
-		// 音频的违规明细挂在语音转写文本下面，不在 audio 本层
-		for _, rawText := range audio.RawText {
-			fmt.Printf("    转写文本(%dms-%dms) conclusion=%s: %s\n",
-				rawText.StartTime, rawText.EndTime, rawText.Conclusion, rawText.Text)
-			for _, detail := range rawText.Data {
-				fmt.Printf("        type=%d subType=%d msg=%s agentType=%s\n",
-					detail.Type, detail.SubType, detail.Msg, detail.AgentType)
-			}
-		}
-	}
+	return buf.String()
 }

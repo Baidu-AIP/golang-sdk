@@ -93,68 +93,57 @@ func (client *FusionCensorClient) SetHTTPClient(httpClient *http.Client) {
 	client.transport.SetHTTPClient(httpClient)
 }
 
-// SubmitText 提交文本审核任务，同步返回 taskId，结论用 PullTextResult 轮询或走回调。
-func (client *FusionCensorClient) SubmitText(request *SubmitTextRequest) (*FusionResponse, error) {
+// SubmitText 提交文本审核任务，返回响应报文原文（含 taskId）。
+// 结论用 PullTextResult 轮询或走回调。
+func (client *FusionCensorClient) SubmitText(request *SubmitTextRequest) (string, error) {
 	if request == nil || request.Text == "" {
-		return nil, errors.New("censor: text must not be empty")
+		return "", errors.New("censor: text must not be empty")
 	}
-	return client.post(__fusionTextSubmitPath, request.toForm())
+	return client.transport.PostForm(__fusionTextSubmitPath, request.toForm())
 }
 
-// SubmitImage 提交图像审核任务。仅支持 URL 传入，base64 会被服务端拒绝（282801）。
-func (client *FusionCensorClient) SubmitImage(request *SubmitImageRequest) (*FusionResponse, error) {
+// SubmitImage 提交图像审核任务，返回响应报文原文（含 taskId）。
+// 仅支持 URL 传入，base64 会被服务端拒绝（282801）。
+func (client *FusionCensorClient) SubmitImage(request *SubmitImageRequest) (string, error) {
 	if request == nil || request.ImgURL == "" {
-		return nil, errors.New("censor: imgUrl must not be empty")
+		return "", errors.New("censor: imgUrl must not be empty")
 	}
-	return client.post(__fusionImageSubmitPath, request.toForm())
+	return client.transport.PostForm(__fusionImageSubmitPath, request.toForm())
 }
 
-// SubmitVideo 提交长视频审核任务。视频转存与抽帧由服务端异步推进，耗时明显长于文本 / 图像。
-func (client *FusionCensorClient) SubmitVideo(request *SubmitVideoRequest) (*FusionResponse, error) {
+// SubmitVideo 提交长视频审核任务，返回响应报文原文（含 taskId）。
+// 视频转存与抽帧由服务端异步推进，耗时明显长于文本 / 图像。
+func (client *FusionCensorClient) SubmitVideo(request *SubmitVideoRequest) (string, error) {
 	if request == nil || request.URL == "" {
-		return nil, errors.New("censor: video url must not be empty")
+		return "", errors.New("censor: video url must not be empty")
 	}
-	return client.post(__fusionVideoSubmitPath, request.toForm())
+	return client.transport.PostForm(__fusionVideoSubmitPath, request.toForm())
 }
 
-// PullTextResult 拉取文本审核结果。
+// PullTextResult 拉取文本审核结果，返回响应报文原文。
 //
-// 未完成时返回 Status=PROCESSING 而不是报错，不要当失败处理。
+// 未完成时报文里 status 为 PROCESSING 而不是报错，不要当失败处理。
 // taskId 必须用提交时对应模态的接口拉取：拉错模态会返回 282006（任务不存在）。
-func (client *FusionCensorClient) PullTextResult(taskID string) (*FusionResponse, error) {
+func (client *FusionCensorClient) PullTextResult(taskID string) (string, error) {
 	return client.pullResult(__fusionTextResultPath, taskID)
 }
 
-// PullImageResult 拉取图像审核结果。语义同 PullTextResult。
-func (client *FusionCensorClient) PullImageResult(taskID string) (*FusionResponse, error) {
+// PullImageResult 拉取图像审核结果，返回响应报文原文。语义同 PullTextResult。
+func (client *FusionCensorClient) PullImageResult(taskID string) (string, error) {
 	return client.pullResult(__fusionImageResultPath, taskID)
 }
 
-// PullVideoResult 拉取长视频审核结果。Data 是含 frames / audios 的对象，
-// 用 FusionResponse.UnmarshalVideoData 解析。
-func (client *FusionCensorClient) PullVideoResult(taskID string) (*FusionResponse, error) {
+// PullVideoResult 拉取长视频审核结果，返回响应报文原文。
+// 长视频的 data 是含 frames / audios 的对象，不是数组。
+func (client *FusionCensorClient) PullVideoResult(taskID string) (string, error) {
 	return client.pullResult(__fusionVideoResultPath, taskID)
 }
 
-func (client *FusionCensorClient) pullResult(path string, taskID string) (*FusionResponse, error) {
+func (client *FusionCensorClient) pullResult(path string, taskID string) (string, error) {
 	if taskID == "" {
-		return nil, errors.New("censor: taskId must not be empty")
+		return "", errors.New("censor: taskId must not be empty")
 	}
 	form := url.Values{}
 	form.Set("taskId", taskID)
-	return client.post(path, form)
-}
-
-// post 发一次请求并组装响应。
-//
-// 返回的 error 只表示传输层或报文解析失败；业务错误（无权限、参数非法等）
-// 通过 FusionResponse.ErrorCode 返回，因为服务端在 4xx/5xx 上仍会带完整错误报文。
-func (client *FusionCensorClient) post(path string, form url.Values) (*FusionResponse, error) {
-	var response FusionResponse
-	raw, err := client.transport.PostForm(path, form, &response)
-	if err != nil {
-		return nil, err
-	}
-	response.Raw = raw
-	return &response, nil
+	return client.transport.PostForm(path, form)
 }

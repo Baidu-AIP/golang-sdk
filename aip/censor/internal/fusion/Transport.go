@@ -17,7 +17,6 @@ limitations under the License.
 package fusion
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -93,13 +92,15 @@ func (transport *Transport) SetHTTPClient(httpClient *http.Client) {
 	}
 }
 
-// PostForm 发送一次已签名的 form-urlencoded 请求，并把响应体解析进 out。
-// 返回原始报文供排查使用。
+// PostForm 发送一次已签名的 form-urlencoded 请求，返回响应体原文。
 //
-// 返回的 error 只表示传输层或报文解析失败。HTTP 4xx/5xx 不算错误 ——
-// 服务端在非 2xx 上仍返回完整的业务错误报文（error_code / error_msg），
-// 上层需要读出业务错误码，而不是把状态码当成传输失败。
-func (transport *Transport) PostForm(path string, form url.Values, out interface{}) (string, error) {
+// 不解析报文：审核结果的字段集不封闭（明细里的 probability、location、hits
+// 等按命中标签动态出现，且随服务端迭代增加），在 SDK 里建模只会静默丢字段。
+// 交给调用方按需自行解析。
+//
+// 返回的 error 只表示传输层失败。HTTP 4xx/5xx 不算错误 —— 服务端在非 2xx 上
+// 仍返回完整的业务错误报文（error_code / error_msg），调用方需要读到它。
+func (transport *Transport) PostForm(path string, form url.Values) (string, error) {
 	requestURL := transport.endpoint + transport.pathPrefix + path
 	req, err := http.NewRequest(http.MethodPost, requestURL, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -120,11 +121,6 @@ func (transport *Transport) PostForm(path string, form url.Values, out interface
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("fusion: read response of %s failed: %w", path, err)
-	}
-
-	if err := json.Unmarshal(raw, out); err != nil {
-		return string(raw), fmt.Errorf("fusion: response of %s is not json (http %d): %s",
-			path, resp.StatusCode, string(raw))
 	}
 	return string(raw), nil
 }

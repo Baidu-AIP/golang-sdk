@@ -317,44 +317,70 @@ type VideoData struct {
 
 // VideoFrame 长视频的一个违规 / 疑似视频帧。
 type VideoFrame struct {
-	// FrameTimeStamp 帧时间戳，毫秒
+	// FrameTimeStamp 该帧在视频中的时间戳，单位秒。
+	// 注意与 VideoAudio 的毫秒单位不一致，这是服务端口径，SDK 不做换算
 	FrameTimeStamp int64 `json:"frameTimeStamp"`
 
-	// FrameURL 帧图预签名地址
+	// FrameURL 帧图预签名地址，默认有效期 30 分钟。
+	// 过期后需重新调 result 接口换取，不要长期缓存
 	FrameURL string `json:"frameUrl"`
 
 	// FrameThumbnailURL 缩略图地址，当前与 FrameURL 相同
 	FrameThumbnailURL string `json:"frameThumbnailUrl"`
 
-	// Data 该帧的违规明细
+	// Data 该帧的违规明细，键恒存在，可能为空数组
 	Data []AuditDetail `json:"data"`
 }
 
 // VideoAudio 长视频的一个违规 / 疑似音频片段。
+//
+// 音频片段的违规明细不在本层，而在 RawText[].Data 里 —— 语音转写文本才是被审核的对象。
 type VideoAudio struct {
-	// StartTime 片段起始时间，毫秒
+	// StartTime 片段起始时间，单位毫秒
 	StartTime int64 `json:"startTime"`
 
-	// EndTime 片段结束时间，毫秒
+	// EndTime 片段结束时间，单位毫秒
 	EndTime int64 `json:"endTime"`
 
-	// AudioURL 音频片段预签名地址
+	// AudioURL 音频片段预签名地址，有效期同 VideoFrame.FrameURL
 	AudioURL string `json:"audioUrl"`
 
-	// AudioAuditResult 音频特征审核结果
-	AudioAuditResult *AudioAuditResult `json:"audioAuditResult"`
+	// AudioAuditResult 声纹类音频特征审核结论（如娇喘识别）。无该类命中时为空
+	AudioAuditResult []AudioAuditResult `json:"audioAuditResult"`
 
-	// RawText ASR 识别文本。服务端固定返回单元素数组
-	RawText []string `json:"rawText"`
-
-	// Data 该片段的违规明细
-	Data []AuditDetail `json:"data"`
+	// RawText 语音转写（ASR）文本的审核结果。该片段无语音内容时为空。
+	// 当前上游只返回拼接后的整段文本，通常只有 1 个元素
+	RawText []VideoAudioText `json:"rawText"`
 }
 
-// AudioAuditResult 音频特征审核结果。
+// AudioAuditResult 声纹类音频特征审核结论。
 type AudioAuditResult struct {
-	Type    int `json:"type"`
-	SubType int `json:"subType"`
+	Type           int    `json:"type"`
+	SubType        int    `json:"subType"`
+	ConclusionType int    `json:"conclusionType"`
+	Conclusion     string `json:"conclusion"`
+	Msg            string `json:"msg"`
+}
+
+// VideoAudioText 一段语音转写文本及其审核结果。
+type VideoAudioText struct {
+	// StartTime 该段文本对应的开始时间，单位毫秒
+	StartTime int64 `json:"startTime"`
+
+	// EndTime 该段文本对应的结束时间，单位毫秒
+	EndTime int64 `json:"endTime"`
+
+	// Text 语音转写出的文本原文
+	Text string `json:"text"`
+
+	// ConclusionType 该段文本的审核结论码，取 ConclusionType* 常量
+	ConclusionType int `json:"conclusionType"`
+
+	// Conclusion 该段文本的审核结论中文描述
+	Conclusion string `json:"conclusion"`
+
+	// Data 该段文本的违规明细，键恒存在，可能为空数组
+	Data []AuditDetail `json:"data"`
 }
 
 // UnmarshalVideoData 把长视频响应的 Data 解析成 VideoData。

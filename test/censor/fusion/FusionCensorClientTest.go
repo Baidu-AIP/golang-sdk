@@ -177,12 +177,32 @@ func printVideoData(response *censor.FusionResponse) {
 	}
 	fmt.Printf("视频时长 %d 秒，违规帧 %d 个，违规音频片段 %d 个\n",
 		data.TaskDuration, len(data.Frames), len(data.Audios))
+
+	// 帧时间戳单位是秒，音频是毫秒 —— 服务端口径不一致
 	for _, frame := range data.Frames {
-		fmt.Printf("帧 %dms: %s，明细 %d 条\n",
+		fmt.Printf("帧 %ds: %s，明细 %d 条\n",
 			frame.FrameTimeStamp, frame.FrameURL, len(frame.Data))
+		for _, detail := range frame.Data {
+			fmt.Printf("    type=%d subType=%d msg=%s agentType=%s\n",
+				detail.Type, detail.SubType, detail.Msg, detail.AgentType)
+		}
 	}
+
 	for _, audio := range data.Audios {
-		fmt.Printf("音频 %dms-%dms: %s，识别文本=%v，明细 %d 条\n",
-			audio.StartTime, audio.EndTime, audio.AudioURL, audio.RawText, len(audio.Data))
+		fmt.Printf("音频 %dms-%dms: %s\n", audio.StartTime, audio.EndTime, audio.AudioURL)
+		// 声纹类特征（如娇喘识别）
+		for _, feature := range audio.AudioAuditResult {
+			fmt.Printf("    声纹: type=%d subType=%d msg=%s\n",
+				feature.Type, feature.SubType, feature.Msg)
+		}
+		// 音频的违规明细挂在语音转写文本下面，不在 audio 本层
+		for _, rawText := range audio.RawText {
+			fmt.Printf("    转写文本(%dms-%dms) conclusion=%s: %s\n",
+				rawText.StartTime, rawText.EndTime, rawText.Conclusion, rawText.Text)
+			for _, detail := range rawText.Data {
+				fmt.Printf("        type=%d subType=%d msg=%s agentType=%s\n",
+					detail.Type, detail.SubType, detail.Msg, detail.AgentType)
+			}
+		}
 	}
 }

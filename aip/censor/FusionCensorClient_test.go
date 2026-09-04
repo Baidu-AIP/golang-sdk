@@ -480,17 +480,22 @@ func TestUnmarshalAuditDetails(t *testing.T) {
 }
 
 // TestUnmarshalVideoData 长视频 data 是对象而非数组，frames / audios 键恒存在。
+// 帧的时间戳单位是秒、音频是毫秒（服务端口径不一致，SDK 不换算）；
+// 音频的违规明细挂在 rawText[].data 而非 audios[] 本层。
 func TestUnmarshalVideoData(t *testing.T) {
 	body := `{
 		"taskId":"tid","status":"FINISHED","conclusion":"不合规","conclusionType":2,
 		"data":{"taskDuration":42,
-			"frames":[{"frameTimeStamp":1000,"frameUrl":"https://bos/f.jpg",
+			"frames":[{"frameTimeStamp":10,"frameUrl":"https://bos/f.jpg",
 				"frameThumbnailUrl":"https://bos/f.jpg",
 				"data":[{"type":4,"subType":0,"conclusionType":2,"msg":"水印"}]}],
-			"audios":[{"startTime":0,"endTime":5000,"audioUrl":"https://bos/a.mp3",
-				"audioAuditResult":{"type":11,"subType":1101},
-				"rawText":["加微信领红包"],
-				"data":[{"agentType":"广告法"}]}]}}`
+			"audios":[{"startTime":0,"endTime":5000,"audioUrl":"https://bos/a.pcm",
+				"audioAuditResult":[{"type":33,"subType":330105,"conclusionType":2,
+					"conclusion":"不合规","msg":"存在娇喘不合规"}],
+				"rawText":[{"startTime":0,"endTime":5000,"text":"加微信领红包",
+					"conclusionType":2,"conclusion":"不合规",
+					"data":[{"type":12,"subType":4,"msg":"存在广告不合规"},
+						{"agentType":"广告法"}]}]}]}}`
 	var captured capturedRequest
 	server := newStubServer(t, http.StatusOK, body, &captured)
 	defer server.Close()
@@ -508,7 +513,7 @@ func TestUnmarshalVideoData(t *testing.T) {
 	if data.TaskDuration != 42 {
 		t.Errorf("taskDuration = %d, want 42", data.TaskDuration)
 	}
-	if len(data.Frames) != 1 || data.Frames[0].FrameTimeStamp != 1000 {
+	if len(data.Frames) != 1 || data.Frames[0].FrameTimeStamp != 10 {
 		t.Fatalf("frames = %+v", data.Frames)
 	}
 	if len(data.Frames[0].Data) != 1 || data.Frames[0].Data[0].Type != 4 {
@@ -518,14 +523,28 @@ func TestUnmarshalVideoData(t *testing.T) {
 		t.Fatalf("audios = %+v", data.Audios)
 	}
 	audio := data.Audios[0]
-	if audio.EndTime != 5000 || audio.AudioURL != "https://bos/a.mp3" {
+	if audio.EndTime != 5000 || audio.AudioURL != "https://bos/a.pcm" {
 		t.Errorf("audio = %+v", audio)
 	}
-	if audio.AudioAuditResult == nil || audio.AudioAuditResult.SubType != 1101 {
-		t.Errorf("audioAuditResult = %+v", audio.AudioAuditResult)
+	// audioAuditResult 是数组，且带 conclusionType / conclusion / msg
+	if len(audio.AudioAuditResult) != 1 {
+		t.Fatalf("audioAuditResult = %+v", audio.AudioAuditResult)
 	}
-	if len(audio.RawText) != 1 || audio.RawText[0] != "加微信领红包" {
-		t.Errorf("rawText = %v", audio.RawText)
+	feature := audio.AudioAuditResult[0]
+	if feature.SubType != 330105 || feature.Msg != "存在娇喘不合规" ||
+		feature.ConclusionType != ConclusionTypeNonCompliant {
+		t.Errorf("audioAuditResult[0] = %+v", feature)
+	}
+	// rawText 是对象数组，违规明细挂在它下面
+	if len(audio.RawText) != 1 {
+		t.Fatalf("rawText = %+v", audio.RawText)
+	}
+	rawText := audio.RawText[0]
+	if rawText.Text != "加微信领红包" || rawText.ConclusionType != ConclusionTypeNonCompliant {
+		t.Errorf("rawText[0] = %+v", rawText)
+	}
+	if len(rawText.Data) != 2 || rawText.Data[0].Type != 12 || rawText.Data[1].AgentType != "广告法" {
+		t.Errorf("rawText[0].data = %+v", rawText.Data)
 	}
 }
 
